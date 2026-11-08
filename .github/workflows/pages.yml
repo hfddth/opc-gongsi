@@ -31,7 +31,7 @@ jobs:
           dest=root/'publish'
           dest.mkdir(exist_ok=True)
           for f in list(root.iterdir()):
-              if f.name in ['.git','.github','portfolio-source','publish']:
+              if f.name in ['.git','.github','portfolio-source','publish','.portfolio-mobile-v2.b64']:
                   continue
               if f.is_dir(): shutil.copytree(f,dest/f.name,dirs_exist_ok=True)
               else: shutil.copy2(f,dest/f.name)
@@ -52,6 +52,8 @@ jobs:
               for name in z.namelist():
                   p=pathlib.PurePosixPath(name)
                   assert not p.is_absolute() and '..' not in p.parts
+              z.extractall(dest)
+          with zipfile.ZipFile(__import__('io').BytesIO(base64.b64decode((root/'.portfolio-mobile-v2.b64').read_text(),validate=True))) as z:
               z.extractall(dest)
           projects=json.loads((dest/'projects.json').read_text())
           assert len(projects)==13
