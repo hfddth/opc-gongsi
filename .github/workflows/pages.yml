@@ -1,4 +1,4 @@
-name: Deploy studio
+name: Deploy studio and portfolio
 on:
   push:
     branches: [main]
@@ -7,6 +7,9 @@ permissions:
   contents: read
   pages: write
   id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -15,11 +18,50 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
+      - uses: actions/checkout@v4
         with:
-          enablement: true
+          repository: hfddth/yangyuying-
+          path: portfolio-source
+          sparse-checkout: .portfolio-payload
+      - name: Restore and verify portfolio
+        run: |
+          python3 - <<'PY'
+          import pathlib, json, base64, hashlib, zipfile, shutil
+          root=pathlib.Path('.')
+          dest=root/'publish'
+          dest.mkdir(exist_ok=True)
+          for f in list(root.iterdir()):
+              if f.name in ['.git','.github','portfolio-source','publish']:
+                  continue
+              if f.is_dir(): shutil.copytree(f,dest/f.name,dirs_exist_ok=True)
+              else: shutil.copy2(f,dest/f.name)
+          source=root/'portfolio-source'/'.portfolio-payload'
+          manifest=json.loads((source/'ready.json').read_text())
+          archive=pathlib.Path('/tmp/portfolio.zip')
+          total=hashlib.sha256()
+          with archive.open('wb') as out:
+              for part in manifest['parts']:
+                  data=base64.b64decode((source/part['name']).read_text(),validate=True)
+                  assert len(data)==part['bytes'], part['name']
+                  assert hashlib.sha256(data).hexdigest()==part['sha256'], part['name']
+                  out.write(data)
+                  total.update(data)
+          assert total.hexdigest()==manifest['sha256']
+          assert archive.stat().st_size==manifest['bytes']
+          with zipfile.ZipFile(archive) as z:
+              for name in z.namelist():
+                  p=pathlib.PurePosixPath(name)
+                  assert not p.is_absolute() and '..' not in p.parts
+              z.extractall(dest)
+          projects=json.loads((dest/'projects.json').read_text())
+          assert len(projects)==13
+          for p in projects:
+              for f in p['files']: assert (dest/f['path']).is_file(), f
+          print('Verified portfolio archive, 13 projects and all original files')
+          PY
+      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: publish
       - id: deployment
         uses: actions/deploy-pages@v4
